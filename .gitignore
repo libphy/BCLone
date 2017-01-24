@@ -7,3 +7,6 @@
 /Default Linux desktop Universal_Data
 /Dominique Development Linux desktop 64-bit_Data
 *.csv
+*.pyc
+
+*.p
