@@ -8,5 +8,6 @@
 /Dominique Development Linux desktop 64-bit_Data
 *.csv
 *.pyc
-
+*.hdfs5
 *.p
+/track1
