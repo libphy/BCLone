@@ -11,3 +11,5 @@
 *.hdfs5
 *.p
 /track1
+*.h5
+*.json
