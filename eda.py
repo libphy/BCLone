@@ -11,6 +11,9 @@ from keras.optimizers import Adam
 import os
 import cv2
 import json
+from imblearn.over_sampling import SMOTE
+
+# use  CUDA_VISIBLE_DEVICES="0" ipython in the bash to use actual device 1
 
 BATCH_SIZE = 64
 cwd = os.getcwd()
@@ -21,8 +24,41 @@ df = pd.read_csv(cwd+'/track1/driving_log.csv', header=None, names=['center','ri
 
 #impaths = list(map(lambda x: cwd+'/data/'+x, df['center'])) #use for udacity data
 impaths = list(map(lambda x: '/'.join(x.split('/')[:-2])+'/track1/'+'/'.join(x.split('/')[-2:]), df['center'])) #use for user collected data
-angles = np.array(df[['steering','speed']])
+dfs=pd.DataFrame()
+dfs['path']=impaths
+dfs['angle']=df['steering']
+angles = np.array(dfs['angle'])
+dfs['time']=dfs.index.values
 
+def sampledata(dfs):
+    X = np.array(dfs[['time','angle']])
+    y = np.array(list(map(lambda x: round(x*10), dfs['angle'])))
+    sm = SMOTE(kind='regular')
+    Xr, yr = sm.fit_sample(X, y)
+    return Xr, yr
+
+def stopfinder(ang):
+    x_pre = None
+    count = 0
+    log = []
+    for x, i in zip(ang, range(0,len(ang))):
+        if (x == 0.0)&(x_pre != 0.0):
+            count = 1
+            idx = i
+        elif (x == 0.0)&(x_pre == 0.0):
+            count +=1
+        elif (x!=0.0)&(x_pre==0.0):
+            log.append([idx, count])
+            count = 0
+        x_pre = x
+    if count>0:
+        log.append([idx, count])
+    return log
+
+al = np.array(stopfinder(angles))
+plt.hist(al[:,1],bins=[0,10,20,30,40,50,60,70,80,90])
+plt.show()
+# the result shows that there are quite long all-zeros.
 
 def eqhGray(X): # equalize histogram gray
     if X.shape[-1] ==3:
@@ -40,13 +76,14 @@ def gen(paths, angles, batchsz):
     while 1:
         for offset in range(0, len(paths), batchsz):
             #x = range(25)[offset:offset+10]
-            batch_X = eqhGray(np.array(list(map(lambda x: cv2.imread(x), paths[offset:offset+batchsz]))))
+            batch_X = np.array(list(map(lambda x: cv2.imread(x), paths[offset:offset+batchsz])))
+            # batch_X = eqhGray(np.array(list(map(lambda x: cv2.imread(x), paths[offset:offset+batchsz]))))
             batch_y = np.array(list(map(lambda x: x, angles[offset:offset+batchsz])))
             yield(batch_X, batch_y)
 
 
 model = Sequential()
-model.add(Convolution2D(32, 3, 3, input_shape=(160, 320, 1),border_mode='same',init='glorot_normal', activation='relu'))
+model.add(Convolution2D(32, 3, 3, input_shape=(160, 320, 3),border_mode='same',init='glorot_normal', activation='relu'))
 model.add(Convolution2D(32, 3, 3, border_mode='same',init='glorot_normal', activation='relu'))
 model.add(MaxPooling2D((2, 2),dim_ordering='tf'))
 model.add(Dropout(0.5))
@@ -59,7 +96,7 @@ model.add(Dropout(0.5))
 model.add(Flatten())
 model.add(Dense(64))
 model.add(Activation('relu'))
-model.add(Dense(2))
+model.add(Dense(1))
 model.add(Activation('tanh'))
 
 adam = Adam(lr=0.001, beta_1=0.9, beta_2=0.999, epsilon=1e-08, decay=0.0)
@@ -78,11 +115,11 @@ model.fit_generator(gen(impaths,angles, BATCH_SIZE),samples_per_epoch=len(angles
 # intermediate_output = intermediate_layer_model.predict(data)
 
 ### EDA with dummy model
-# g = gen(impaths[1000:2000], angles[1000:2000], speeds[1000:2000], 128) #take some data in the middle to avoid a lot of zero angles in the beginning
-# g0 = next(g) #generate data as tuple
-# X, y = g0
-# y = y.reshape((128,2))
-# yp = model.predict(X, batch_size=128) #comparing yp and y by eyes suggest that the model+training sucks.
+g = gen(impaths[1000:2000], angles[1000:2000], 128) #take some data in the middle to avoid a lot of zero angles in the beginning
+g0 = next(g) #generate data as tuple
+X, y = g0
+#y = y.reshape((128,2))
+yp = model.predict(X, batch_size=128) #comparing yp and y by eyes suggest that the model+training sucks.
 ## Comment: it could be combination of these
 ## 1) model is too primitive,
 ## 2) needs data augmentation and preprocessing,
