@@ -11,54 +11,88 @@ from keras.optimizers import Adam
 import os
 import cv2
 import json
-from imblearn.over_sampling import SMOTE
+#from imblearn.over_sampling import SMOTE
+from collections import Counter
 
 # use  CUDA_VISIBLE_DEVICES="0" ipython in the bash to use actual device 1
 
 BATCH_SIZE = 64
 cwd = os.getcwd()
-df = pd.read_csv(cwd+'/track1/driving_log.csv', header=None, names=['center','right','left','steering','throttle','brake','speed']) #use for user collected data
-#df = pd.read_csv(cwd+'/data/driving_log.csv', header=0) #use for udacity data
+#df = pd.read_csv(cwd+'/track1/driving_log.csv', header=None, names=['center','right','left','steering','throttle','brake','speed']) #use for user collected data
+df = pd.read_csv(cwd+'/data/driving_log.csv', header=0) #use for udacity data
 # the header setup depends on the data file. check if the data already includes header.
 ## change df file addresses to full addresses
 
-#impaths = list(map(lambda x: cwd+'/data/'+x, df['center'])) #use for udacity data
-impaths = list(map(lambda x: '/'.join(x.split('/')[:-2])+'/track1/'+'/'.join(x.split('/')[-2:]), df['center'])) #use for user collected data
+impaths = list(map(lambda x: cwd+'/data/'+x, df['center'])) #use for udacity data
+#impaths = list(map(lambda x: '/'.join(x.split('/')[:-2])+'/track1/'+'/'.join(x.split('/')[-2:]), df['center'])) #use for user collected data
 dfs=pd.DataFrame()
 dfs['path']=impaths
 dfs['angle']=df['steering']
 angles = np.array(dfs['angle'])
 dfs['time']=dfs.index.values
+dfs['speed']=df['speed']
+# def sampledata(dfs):
+#     X = np.array(dfs[['time','angle']])
+#     y = np.array(list(map(lambda x: round(x*10), dfs['angle'])))
+#     sm = SMOTE(kind='regular')
+#     Xr, yr = sm.fit_sample(X, y)
+#     return Xr, yr
 
-def sampledata(dfs):
-    X = np.array(dfs[['time','angle']])
-    y = np.array(list(map(lambda x: round(x*10), dfs['angle'])))
-    sm = SMOTE(kind='regular')
-    Xr, yr = sm.fit_sample(X, y)
-    return Xr, yr
-
-def stopfinder(ang):
+def stopfinder(ang, spd):
     x_pre = None
     count = 0
     log = []
-    for x, i in zip(ang, range(0,len(ang))):
+    avgspd = 0
+    for x, s, i in zip(ang, spd, range(0,len(ang))):
         if (x == 0.0)&(x_pre != 0.0):
             count = 1
             idx = i
+            avgspd = s
         elif (x == 0.0)&(x_pre == 0.0):
             count +=1
+            avgspd += s
         elif (x!=0.0)&(x_pre==0.0):
-            log.append([idx, count])
+            log.append([idx, count, avgspd/count])
             count = 0
+            avgspd = 0
         x_pre = x
     if count>0:
-        log.append([idx, count])
+        log.append([idx, count, avgspd/count])
     return log
 
-al = np.array(stopfinder(angles))
-plt.hist(al[:,1],bins=[0,10,20,30,40,50,60,70,80,90])
-plt.show()
-# the result shows that there are quite long all-zeros.
+# l = stopfinder(dfs['angle'], dfs['speed'])
+# al = np.array(l)
+# plt.hist(al[:,1],bins=[0,10,20,30,40,50,60,70,80,90])
+# plt.show() # the result shows that there are quite long all-zeros.
+# plt.plot(al[:,1],al[:,2],'*')
+# plt.show() # it shows that there are quite a bit of flat road cases, and also there are excessively long stop, yet there is no zero speed.
+# flatroad = list(filter(lambda x: (x[1]>10)&(x[2]>10), l))
+# lowspeed = list(filter(lambda x: (x[2]<10), l))
+# bin0 = np.arange(-1,1.1,0.1)
+# plt.hist(angles, bin0)
+
+def inversefreq(ang):
+    """
+    resamples data based on inverse frequency of the angle
+    """
+    bins = np.arange(-1.1,1.2,0.2) #check if there is 0 and make sure to choose a right bin size
+    count, _ = np.histogram(ang,bins)
+    prob = []
+    for a in angles:
+        for i in range(len(bins)-1):
+            if (bins[i]<=a)&(a<bins[i+1]):
+                prob.append(1/count[i])
+    #list(map(lambda x: pmf[int(round(x*5)+5)], ang))
+    prob = np.array(prob)
+    return prob/prob.sum()
+
+def resample(vec,prob, n):
+    res = np.random.choice(vec, n, p=prob)
+    return res
+
+dfs['prob'] = inversefreq(df['steering'])
+idxselect = resample(range(len(df)), dfs['prob'], 8000)
+dfn = dfs.ix[idxselect]
 
 def eqhGray(X): # equalize histogram gray
     if X.shape[-1] ==3:
@@ -82,6 +116,7 @@ def gen(paths, angles, batchsz):
             yield(batch_X, batch_y)
 
 
+
 model = Sequential()
 model.add(Convolution2D(32, 3, 3, input_shape=(160, 320, 3),border_mode='same',init='glorot_normal', activation='relu'))
 model.add(Convolution2D(32, 3, 3, border_mode='same',init='glorot_normal', activation='relu'))
@@ -102,7 +137,7 @@ model.add(Activation('tanh'))
 adam = Adam(lr=0.001, beta_1=0.9, beta_2=0.999, epsilon=1e-08, decay=0.0)
 model.compile(loss='mse', optimizer=adam)
 
-model.fit_generator(gen(impaths,angles, BATCH_SIZE),samples_per_epoch=len(angles), nb_epoch=10)
+model.fit_generator(gen(dfn['path'],dfn['angle'], BATCH_SIZE),samples_per_epoch=len(dfn['angle']), nb_epoch=10)
 
 ##
 #http://stackoverflow.com/questions/38936016/keras-how-are-batches-and-epochs-used-in-fit-generator
