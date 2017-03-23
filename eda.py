@@ -19,19 +19,29 @@ from sklearn.utils import shuffle
 
 BATCH_SIZE = 64
 cwd = os.getcwd()
-df = pd.read_csv(cwd+'/midlane/driving_log.csv', header=None, names=['center','right','left','steering','throttle','brake','speed']) #use for user collected data
 #df = pd.read_csv(cwd+'/data/driving_log.csv', header=0) #use for udacity data
 # the header setup depends on the data file. check if the data already includes header.
 ## change df file addresses to full addresses
+datafolder = '/alldata/racetrack'
+dirnames = os.listdir(cwd+datafolder)
+blacklist = ['irratic']
+df = pd.DataFrame(columns=['path','center','right','left','steering','throttle','brake','speed'])
+for sub in dirnames:
+    if sub not in blacklist:
+        df1 = pd.read_csv(cwd+datafolder+'/'+sub+'/driving_log.csv', header=None, names=['center','right','left','steering','throttle','brake','speed'])
+        print(sub, len(df1))
+        df1['path'] = list(map(lambda x: cwd+datafolder+'/'+sub+'/IMG/'+x.split('/')[-1], df1['center']))
+        df = pd.concat([df,df1], ignore_index=True) #use for user collected data
+
 
 #impaths = list(map(lambda x: cwd+'/data/'+x, df['center'])) #use for udacity data
-impaths = list(map(lambda x: '/'.join(x.split('/')[:-2])+'/midlane/'+'/'.join(x.split('/')[-2:]), df['center'])) #use for user collected data
-dfs=pd.DataFrame()
-dfs['path']=impaths
-dfs['angle']=df['steering']
-angles = np.array(dfs['angle'])
-dfs['time']=dfs.index.values
-dfs['speed']=df['speed']
+#impaths = list(map(lambda x: '/'.join(x.split('/')[:-2])+'/mountain/midlane/'+'/'.join(x.split('/')[-2:]), df['center'])) #use for user collected data
+# dfs=pd.DataFrame()
+# dfs['path']=df['path']
+# dfs['angle']=df['steering']
+# angles = np.array(dfs['angle'])
+# dfs['time']=dfs.index.values
+# dfs['speed']=df['speed']
 # def sampledata(dfs):
 #     X = np.array(dfs[['time','angle']])
 #     y = np.array(list(map(lambda x: round(x*10), dfs['angle'])))
@@ -97,9 +107,11 @@ def resample(vec,prob, n):
 # dfn = dfs.ix[idxselect]
 
 
-dfn = dfs #dfs[dfs['angle']!=0.0]
-X = dfn['path']
-y = dfn['angle']
+# dfn = dfs #dfs[dfs['angle']!=0.0]
+# X = dfn['path']
+# y = dfn['angle']
+X = df['path']
+y = df['steering']
 Xtr, ytr = shuffle(X,y,random_state=0)
 
 def eqhGray(X): # equalize histogram gray
@@ -121,12 +133,12 @@ def gen(paths, angles, batchsz): #with flip enabled, it will produce twice many 
             batch_X = np.array(list(map(lambda x: cv2.imread(x), paths[offset:offset+batchsz])))
             # batch_X = eqhGray(np.array(list(map(lambda x: cv2.imread(x), paths[offset:offset+batchsz]))))
             batch_y = np.array(list(map(lambda x: x, angles[offset:offset+batchsz])))
-            batch_X_flip = np.array(list(map(lambda x: np.fliplr(x),batch_X)))
-            batch_y_flip = -1*batch_y
-            X_bat = np.concatenate((batch_X, batch_X_flip))
-            y_bat = np.concatenate((batch_y, batch_y_flip))
-            yield(X_bat, y_bat)
-
+            # batch_X_flip = np.array(list(map(lambda x: np.fliplr(x),batch_X)))
+            # batch_y_flip = -1*batch_y
+            # X_bat = np.concatenate((batch_X, batch_X_flip))
+            # y_bat = np.concatenate((batch_y, batch_y_flip))
+            # yield(X_bat, y_bat)
+            yield(batch_X, batch_y)
 
 # # My nano VGG model
 # model = Sequential()
@@ -153,7 +165,7 @@ def gen(paths, angles, batchsz): #with flip enabled, it will produce twice many 
 
 ### Comma_AI
 model = Sequential()
-model.add(Lambda(lambda x: x/127.5 - 1.,
+model.add(Lambda(lambda x: x/255.0 - 0.5,
         input_shape=(160, 320, 3),
         output_shape=(160, 320, 3)))
 model.add(Convolution2D(16, 8, 8, subsample=(4, 4), border_mode="same"))
@@ -183,11 +195,11 @@ model.fit_generator(gen(Xtr,ytr, BATCH_SIZE),samples_per_epoch=len(ytr), nb_epoc
 # intermediate_output = intermediate_layer_model.predict(data)
 
 ### EDA with dummy model
-g = gen(impaths[2000:3000], angles[2000:3000], 128) #take some data in the middle to avoid a lot of zero angles in the beginning
-g0 = next(g) #generate data as tuple
-X1, y1 = g0
-#y = y.reshape((128,2))
-yp = model.predict(X1, batch_size=128) #comparing yp and y by eyes suggest that the model+training sucks.
+# g = gen(impaths[2000:3000], angles[2000:3000], 128) #take some data in the middle to avoid a lot of zero angles in the beginning
+# g0 = next(g) #generate data as tuple
+# X1, y1 = g0
+# #y = y.reshape((128,2))
+# yp = model.predict(X1, batch_size=128) #comparing yp and y by eyes suggest that the model+training sucks.
 ## Comment: it could be combination of these
 ## 1) model is too primitive,
 ## 2) needs data augmentation and preprocessing,

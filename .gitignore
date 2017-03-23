@@ -1,7 +1,7 @@
 /data
 /__MACOSX
 /IMG
-/midlane
+/alldata
 *.zip
 *.x86
 *.x86_64
@@ -11,8 +11,7 @@
 *.pyc
 *.hdfs5
 *.p
-/track1
 *.h5
 *.json
-/irratic
 *.png
+/mountain
